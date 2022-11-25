@@ -5,24 +5,26 @@ library(fUnitRoots)
 library(forecast)
 library(tseries)
 
-portfolio = c("BTC-USD","ETH-USD","LTC-USD","XRP-USD","ADA-USD")
-getSymbols(portfolio, src="yahoo", from="2020-01-01")
+#portfolio = c("BTC-USD","ETH-USD","LTC-USD","XRP-USD","ADA-USD")
+portfolio = c("BTC-USD")
+getSymbols(portfolio, src="yahoo", from="2016-01-01")
 tail(`BTC-USD`)
 
 chartSeries(`BTC-USD`)
 barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`ETH-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`LTC-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`XRP-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`ADA-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
 
-chartSeries(`ETH-USD`)
-barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
-
-chartSeries(`LTC-USD`)
-barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
-
-chartSeries(`XRP-USD`)
-barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
-
-chartSeries(`ADA-USD`)
-barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
 
 ########## DATA EXPLORE ##########
 
@@ -66,6 +68,27 @@ fBasics::normalTest(x, method="jb")
 
 ########## DATA PROCESS ##########
 
+periodicity(`BTC-USD`)
+
+btc_weekly <- to.period(`BTC-USD`, "weeks")
+periodicity(btc_weekly)
+
+btc_monthly <- to.period(`BTC-USD`, "months")
+periodicity(btc_monthly)
+
+allReturns(`BTC-USD`)
+
+btc_logrtn_daily <-dailyReturn(`BTC-USD`, type="log")
+btc_logrtn_weekly <- weeklyReturn(`BTC-USD`, type="log")
+btc_logrtn_monthly <- monthlyReturn(`BTC-USD`, type="log")
+
+chartSeries(
+  btc_logrtn_daily, type="l", TA=NULL, 
+  name="Log Returns",
+  theme="white", major.ticks="years", minor.ticks=FALSE)
+
+########## DATA PROCESS ##########
+
 btc_ts = ts(log(`BTC-USD`[, 4]), frequency = 12)
 plot(btc_ts)
 
@@ -80,9 +103,9 @@ plot.ts(btc_tsdiff1, col = "red")
 adf.test(btc_tsdiff1)
 
 Box.test(btc_tsdiff1, lag=12, type="Ljung")
-acf(btc_tsdiff1)
-pacf(btc_tsdiff1)   
-
+acf(btc_tsdiff1, lag=36)
+pacf(btc_tsdiff1, lag=36)   
+unitrootTest(btc_tsdiff1,lags=1,type=c("c"))
 
 ########## MODELING ##########
 
