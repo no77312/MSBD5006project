@@ -24,6 +24,46 @@ barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
 chartSeries(`ADA-USD`)
 barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
 
+########## DATA EXPLORE ##########
+
+chartSeries(`BTC-USD`)
+logret <- diff(log(`BTC-USD`[, 6]))
+chartSeries(
+  logret, type="l", TA=NULL, 
+  name="Log Returns",
+  theme="white", major.ticks="years", minor.ticks=FALSE)
+
+x <- coredata(logret)
+hist(x, main="Log Returns", xlab="", ylab="")
+
+qqnorm(x, main="Log Returns")
+qqline(x, col="red")
+
+fBasics::basicStats(x)
+
+tmp.1 <- density(x, na.rm=TRUE)
+tmp.x <- seq(min(x, na.rm=TRUE), max(x, na.rm=TRUE), 
+             length.out=100)
+tmp.y <- dnorm(tmp.x, mean(x, na.rm=TRUE), 
+               sd(x, na.rm=TRUE))
+tmp.ra <- range(c(tmp.1$y, tmp.y), na.rm=TRUE)
+plot(tmp.1, main="Log Return", 
+     ylim=tmp.ra)
+lines(tmp.x, tmp.y, lwd=2, col="red")
+legend("topleft", lwd=c(1,2), 
+       col=c("black", "red"),
+       legend=c("Kernel density Est.", 
+                "Parametric normal density est."))
+
+t.test(x)
+tmp <- fBasics::basicStats(x)["Skewness", 1]; tmp
+tmp/sqrt(6/length(x))
+
+tmp <- fBasics::basicStats(x)["Kurtosis", 1]; tmp
+tmp/sqrt(24/length(x))
+
+fBasics::normalTest(x, method="jb")
+
 ########## DATA PROCESS ##########
 
 btc_ts = ts(log(`BTC-USD`[, 4]), frequency = 12)
