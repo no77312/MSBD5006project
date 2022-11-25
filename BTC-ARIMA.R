@@ -4,10 +4,10 @@ library(xts)
 library(fUnitRoots)
 library(forecast)
 library(tseries)
-
+library(TSA)
 #portfolio = c("BTC-USD","ETH-USD","LTC-USD","XRP-USD","ADA-USD")
 portfolio = c("BTC-USD")
-getSymbols(portfolio, src="yahoo", from="2016-01-01")
+getSymbols(portfolio, src="yahoo", from="2000-01-01")
 tail(`BTC-USD`)
 
 chartSeries(`BTC-USD`)
@@ -70,6 +70,10 @@ fBasics::normalTest(x, method="jb")
 
 periodicity(`BTC-USD`)
 
+btc_daily <- to.period(`BTC-USD`, "days")
+attr(btc_daily, 'frequency') <- 1
+periodicity(btc_daily)
+
 btc_weekly <- to.period(`BTC-USD`, "weeks")
 attr(btc_weekly, 'frequency') <- 7
 periodicity(btc_weekly)
@@ -128,7 +132,7 @@ plot.decomposed.xts <-
   }
 
 
-########## DATA PROCESS ##########
+########## MOTHLY MODELING ##########
 
 
 # btc_ts = ts(log(`BTC-USD`[, 4]), frequency = 12)
@@ -162,27 +166,137 @@ plot(diff1_log_btc_monthly, col = "red")
 
 adf.test(diff1_log_btc_monthly)
 
-Box.test(diff1_log_btc_monthly, lag=12, type="Ljung")
-acf(diff1_log_btc_monthly)
-pacf(diff1_log_btc_monthly)
+Box.test(diff1_log_btc_monthly, lag=48, type="Ljung")
+acf(diff1_log_btc_monthly, lag=60)
+pacf(diff1_log_btc_monthly, lag=60)
 
 unitrootTest(diff1_log_btc_monthly,lags=1,type=c("c"))
 
-
-########## MODELING ##########
-
-# auto.arima()
-btc_arima = arima(log_btc_monthly,order=c(1,1,1),seasonal=list(order=c(5,1,0),period=12))
-btc_arima
-btc_tsforecasts <- predict(btc_arima)
-plot(btc_arima)
+resm <- ar(diff1_log_btc_monthly, method="ols"); resm
+plot(as.numeric(names(resm$aic)), resm$aic, type="h",
+     xlab="k", ylab="AIC")
 
 
-arima_res = btc_arima$residuals
-plot.ts(arima_res)
 
-Box.test(arima_res,lag=12,type="Ljung")
-pv=1-pchisq(14.578,11)
-pv
+monthly_AR_model = arima(log_btc_monthly,order=c(1,1,0),seasonal=list(order=c(0,1,0),period=12))
+
+Box.test(monthly_AR_model$residuals, lag=12, type="Ljung")
+forecast::checkresiduals(monthly_AR_model)
+tsdiag(monthly_AR_model)
+
+# predict
+monthly_AR_model <- arima(log_btc_monthly[1:95],order=c(1,1,0),seasonal=list(order=c(0,1,0),period=12))
+monthly_AR_pred <- predict(monthly_AR_model, n.ahead=4)
+result = cbind(Observed=round(c(log_btc_monthly[96:99]), 4), 
+               Predict=round(c(monthly_AR_pred$pred), 4), 
+               SE=round(c(monthly_AR_pred$se), 4))
+
+plot(log_btc_monthly[90:99],type="l",lty=1)
+lines(result[,2],col="red", lwd=1, lty=2, type="b", pch=2)
+lines(result[,2] - 2*result[,3], 
+      lwd=1, lty=3, type="l")
+lines(result[,2] + 2*result[,3], 
+      col="green", lwd=1, lty=3, type="l")
 
 
+
+########## WEEKLY MODELING ##########
+
+log_btc_weekly <-log(Cl(btc_weekly))
+plot(log_btc_weekly)
+adf.test(log_btc_weekly)
+
+btc_tscomponents <- decompose(as.ts(log_btc_weekly))
+plot(btc_tscomponents, col = "red")
+
+dex <- decompose.xts(log_btc_weekly)
+plot(dex)
+
+diff1_log_btc_weekly <- diff(log_btc_weekly, differences=1) # same as btc_logrtn_monthly
+diff1_log_btc_weekly <- na.omit(diff1_log_btc_weekly)
+plot(diff1_log_btc_weekly, col = "red")
+
+adf.test(diff1_log_btc_weekly)
+
+Box.test(diff1_log_btc_weekly, lag=14, type="Ljung")
+acf(diff1_log_btc_weekly)
+pacf(diff1_log_btc_weekly)
+
+unitrootTest(diff1_log_btc_weekly,lags=1,type=c("c"))
+
+# conclusion: weekly data is white noise
+
+########## DAILY MODELING ##########
+
+log_btc_daily <-log(Cl(btc_daily))
+plot(log_btc_daily)
+adf.test(log_btc_daily)
+
+#btc_tscomponents <- decompose(as.ts(log_btc_daily))
+#plot(btc_tscomponents, col = "red")
+
+#dex <- decompose.xts(log_btc_daily)
+# plot(dex)
+
+diff1_log_btc_daily <- diff(log_btc_daily, differences=1) # same as btc_logrtn_monthly
+diff1_log_btc_daily <- na.omit(diff1_log_btc_daily)
+plot(diff1_log_btc_daily, col = "red")
+
+adf.test(diff1_log_btc_daily)
+
+Box.test(diff1_log_btc_daily, lag=40, type="Ljung")
+acf(diff1_log_btc_daily)
+pacf(diff1_log_btc_daily)
+
+unitrootTest(diff1_log_btc_daily,lags=1,type=c("c"))
+
+
+# AR
+# auto.arima(log_btc_daily)
+
+acf(diff1_log_btc_daily,lag=60)
+pacf(diff1_log_btc_daily,lag=60)
+
+resm <- ar(diff1_log_btc_daily, method="ols"); resm
+plot(as.numeric(names(resm$aic)), resm$aic, type="h",
+     xlab="k", ylab="AIC")
+
+arima(log_btc_daily,order=c(1,1,0))
+arima(log_btc_daily,order=c(2,1,0))
+arima(log_btc_daily,order=c(3,1,0))
+arima(log_btc_daily,order=c(4,1,0))
+arima(log_btc_daily,order=c(22,1,0))
+
+
+daily_AR_model = arima(log_btc_daily,order=c(2,1,0))
+
+Box.test(daily_AR_model$residuals, lag=12, type="Ljung")
+forecast::checkresiduals(daily_AR_model)
+tsdiag(daily_AR_model)
+
+# predict
+daily_AR_model <- arima(log_btc_daily[1:2516], order=c(2,1,0))
+daily_AR_pred <- predict(monthly_AR_model, n.ahead=5)
+result = cbind(Observed=round(c(log_btc_daily[2517:2521]), 5), 
+      Predict=round(c(daily_AR_pred$pred), 5), 
+      SE=round(c(daily_AR_pred$se), 5))
+
+plot(log_btc_daily[2500:2521],type="l",lty=1)
+lines(result[,2],col="red", lwd=1, lty=2, type="b", pch=2)
+
+lines(result[,2] - 2*result[,3], 
+       lwd=1, lty=3, type="l")
+lines(result[,2] + 2*result[,3], 
+      col="green", lwd=1, lty=3, type="l")
+
+# MA
+
+arima(log_btc_monthly)
+
+#ARMA
+
+TSA::eacf(diff1_log_btc_daily, 12, 12)
+resr <- TSA::armasubsets(diff1_log_btc_daily, nar = 12, nma = 12)
+plot(resr)
+
+forecast::auto.arima(log_btc_daily, max.p = 12, max.q = 12, max.P = 1, max.Q = 1)
