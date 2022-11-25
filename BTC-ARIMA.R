@@ -136,6 +136,15 @@ plot.decomposed.xts <-
 # adf.test(btc_ts)
 # btc_tscomponents <- decompose(btc_ts)
 # plot(btc_tscomponents, col = "red")
+# 
+# btc_tsdiff1 <- diff(btc_ts, differences=1)
+# plot.ts(btc_tsdiff1, col = "red")
+# adf.test(btc_tsdiff1)
+# 
+# Box.test(btc_tsdiff1, lag=12, type="Ljung")
+# acf(btc_tsdiff1, lag=36)
+# pacf(btc_tsdiff1, lag=36)   
+# unitrootTest(btc_tsdiff1,lags=1,type=c("c"))
 
 log_btc_monthly <-log(Cl(btc_monthly))
 plot(log_btc_monthly)
@@ -147,23 +156,23 @@ plot(btc_tscomponents, col = "red")
 dex <- decompose.xts(log_btc_monthly)
 plot(dex)
 
+diff1_log_btc_monthly <- diff(log_btc_monthly, differences=1) # same as btc_logrtn_monthly
+diff1_log_btc_monthly <- na.omit(diff1_log_btc_monthly)
+plot(diff1_log_btc_monthly, col = "red")
 
-reclass(decompose(timeseries)$trend,match.to=dataXts)
+adf.test(diff1_log_btc_monthly)
 
-btc_tsdiff1 <- diff(btc_ts, differences=1)
-plot.ts(btc_tsdiff1, col = "red")
+Box.test(diff1_log_btc_monthly, lag=12, type="Ljung")
+acf(diff1_log_btc_monthly)
+pacf(diff1_log_btc_monthly)
 
-adf.test(btc_tsdiff1)
+unitrootTest(diff1_log_btc_monthly,lags=1,type=c("c"))
 
-Box.test(btc_tsdiff1, lag=12, type="Ljung")
-acf(btc_tsdiff1, lag=36)
-pacf(btc_tsdiff1, lag=36)   
-unitrootTest(btc_tsdiff1,lags=1,type=c("c"))
 
 ########## MODELING ##########
 
 # auto.arima()
-btc_arima = arima(btc_ts,order=c(1,1,1),seasonal=list(order=c(5,1,0),period=12))
+btc_arima = arima(log_btc_monthly,order=c(1,1,1),seasonal=list(order=c(5,1,0),period=12))
 btc_arima
 btc_tsforecasts <- predict(btc_arima)
 plot(btc_arima)
