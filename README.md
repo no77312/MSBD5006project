@@ -1,1 +1,2 @@
-# msbd5006project
+# MSBD5006 PROJECT
+Cryptocurrency Data - Time Series Analysis
