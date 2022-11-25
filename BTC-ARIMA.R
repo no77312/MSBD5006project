@@ -78,14 +78,21 @@ periodicity(btc_monthly)
 
 allReturns(`BTC-USD`)
 
-btc_logrtn_daily <-dailyReturn(`BTC-USD`, type="log")
-btc_logrtn_weekly <- weeklyReturn(`BTC-USD`, type="log")
-btc_logrtn_monthly <- monthlyReturn(`BTC-USD`, type="log")
+# btc_logrtn_daily <-dailyReturn(`BTC-USD`, type="log")
+# btc_logrtn_weekly <- weeklyReturn(`BTC-USD`, type="log")
+# btc_logrtn_monthly <- monthlyReturn(`BTC-USD`, type="log")
+
+btc_logrtn_daily <- Delt(`BTC-USD`$`BTC-USD.Close`,type='log') # same as diff(log(`BTC-USD`[, 4]))
+btc_logrtn_weekly <- Delt(btc_weekly$`BTC-USD.Close`,type='log')
+btc_logrtn_monthly <- Delt(btc_monthly$`BTC-USD.Close`,type='log')
 
 chartSeries(
   btc_logrtn_daily, type="l", TA=NULL, 
-  name="Log Returns",
+  name="Daily Log Returns",
   theme="white", major.ticks="years", minor.ticks=FALSE)
+
+plot(btc_logrtn_daily)
+plot(logret)
 
 ########## DATA PROCESS ##########
 
