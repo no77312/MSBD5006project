@@ -71,9 +71,11 @@ fBasics::normalTest(x, method="jb")
 periodicity(`BTC-USD`)
 
 btc_weekly <- to.period(`BTC-USD`, "weeks")
+attr(btc_weekly, 'frequency') <- 7
 periodicity(btc_weekly)
 
 btc_monthly <- to.period(`BTC-USD`, "months")
+attr(btc_monthly, 'frequency') <- 12
 periodicity(btc_monthly)
 
 allReturns(`BTC-USD`)
@@ -82,9 +84,10 @@ allReturns(`BTC-USD`)
 # btc_logrtn_weekly <- weeklyReturn(`BTC-USD`, type="log")
 # btc_logrtn_monthly <- monthlyReturn(`BTC-USD`, type="log")
 
-btc_logrtn_daily <- Delt(`BTC-USD`$`BTC-USD.Close`,type='log') # same as diff(log(`BTC-USD`[, 4]))
-btc_logrtn_weekly <- Delt(btc_weekly$`BTC-USD.Close`,type='log')
-btc_logrtn_monthly <- Delt(btc_monthly$`BTC-USD.Close`,type='log')
+btc_logrtn_daily <- Delt(Cl(`BTC-USD`),type='log') # same as diff(log(`BTC-USD`[, 4]))
+btc_logrtn_weekly <- Delt(Cl(btc_weekly),type='log')
+btc_logrtn_monthly <- Delt(Cl(btc_monthly),type='log')
+
 
 chartSeries(
   btc_logrtn_daily, type="l", TA=NULL, 
@@ -96,13 +99,56 @@ plot(logret)
 
 ########## DATA PROCESS ##########
 
-btc_ts = ts(log(`BTC-USD`[, 4]), frequency = 12)
-plot(btc_ts)
+decompose.xts <-
+  function (x, type = c("additive", "multiplicative"), filter = NULL) 
+  {
+    dts <- decompose(as.ts(x), type, filter)
+    dts$x <- .xts(dts$x, .index(x))
+    dts$seasonal <- .xts(dts$seasonal, .index(x))
+    dts$trend <- .xts(dts$trend, .index(x))
+    dts$random <- .xts(dts$random, .index(x))
+    
+    with(dts,
+         structure(list(x = x, seasonal = seasonal, trend = trend,
+                        random = if (type == "additive") x - seasonal - trend else x/seasonal/trend, 
+                        figure = figure, type = type), class = "decomposed.xts"))
+  }
 
-adf.test(btc_ts)
+plot.decomposed.xts <-
+  function(x, ...)
+  {
+    xx <- x$x
+    if (is.null(xx))
+      xx <- with(x,
+                 if (type == "additive") random + trend + seasonal
+                 else random * trend * seasonal)
+    p <- cbind(observed = xx, trend = x$trend, seasonal = x$seasonal, random = x$random)
+    plot(p, main = paste("Decomposition of", x$type, "time series"), multi.panel = 4,
+         yaxis.same = FALSE, major.ticks = "years", grid.ticks.on = "years", ...)
+  }
 
-btc_tscomponents <- decompose(btc_ts)
+
+########## DATA PROCESS ##########
+
+
+# btc_ts = ts(log(`BTC-USD`[, 4]), frequency = 12)
+# plot(btc_ts)
+# adf.test(btc_ts)
+# btc_tscomponents <- decompose(btc_ts)
+# plot(btc_tscomponents, col = "red")
+
+log_btc_monthly <-log(Cl(btc_monthly))
+plot(log_btc_monthly)
+adf.test(log_btc_monthly)
+
+btc_tscomponents <- decompose(as.ts(log_btc_monthly))
 plot(btc_tscomponents, col = "red")
+
+dex <- decompose.xts(log_btc_monthly)
+plot(dex)
+
+
+reclass(decompose(timeseries)$trend,match.to=dataXts)
 
 btc_tsdiff1 <- diff(btc_ts, differences=1)
 plot.ts(btc_tsdiff1, col = "red")
