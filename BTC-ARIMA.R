@@ -152,10 +152,45 @@ plot(diff1_log_btc_monthly, col = "red", main="ordinary differentiation on log b
 
 adf.test(diff1_log_btc_monthly) # test non-stationary, p-value < 0.05, is stationary
 Box.test(diff1_log_btc_monthly, lag=48, type="Ljung") # test white noise, p-value > 0.05, is white noise
-acf(ts(diff1_log_btc_monthly), main='Ordinary Diff on Monthly Log Return', lag=60) # a significant lag at 12 & 23
+acf(ts(diff1_log_btc_monthly), main='Ordinary Diff on Monthly Log Return', lag=60) # a significant lag at 13 & 23
 pacf(ts(diff1_log_btc_monthly),main='Ordinary Diff on Monthly Log Return', lag=60) # a significant lag at 13 & 23
+# conclusion: monthly return is white noise since 2016
 
-# conclusion: monthly return is white noise
+# try MA(13) and fix other coef to zero:
+est = arima(diff1_log_btc_monthly,order=c(0,0,13),fixed=c(rep(0,12),NA,NA),seasonal=list(order=c(0,0,0),period=12))
+est
+
+jointTest= Box.test(est$residuals, lag=24, type="Ljung")
+jointTest
+
+pv=1-pchisq(jointTest$statistic[1],23) #Compute p-value using 8 degrees of freedom
+names(pv) <- 'pv'
+pv #0.5137
+
+# try AR(13) and fix other coef to zero:
+est = arima(diff1_log_btc_monthly,order=c(13,0,0),fixed=c(rep(0,12),NA,NA),seasonal=list(order=c(0,0,0),period=12))
+est
+
+jointTest= Box.test(est$residuals, lag=24, type="Ljung")
+jointTest
+
+pv=1-pchisq(jointTest$statistic[1],23) #Compute p-value using 8 degrees of freedom
+names(pv) <- 'pv'
+pv # 0.4895
+
+
+# try ARMA(13,13) and fix other coef to zero: - NOT siginificant
+est = arima(diff1_log_btc_monthly,order=c(13,0,13),fixed=c(rep(0,12),NA,rep(0,12),NA,NA),seasonal=list(order=c(0,0,0),period=12))
+est
+
+jointTest= Box.test(est$residuals, lag=24, type="Ljung")
+jointTest
+
+pv=1-pchisq(jointTest$statistic[1],23) #Compute p-value using 8 degrees of freedom
+names(pv) <- 'pv'
+pv #0.5111164
+
+# conclusion: try MA(13) if insist on using ARMA as the mean model
 
 # # seasonal difference on price - seems incorrect
 # sdiff1_log_btc_monthly <- diff(log_btc_monthly, differences=12) 
