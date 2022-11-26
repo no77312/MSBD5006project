@@ -5,6 +5,7 @@ library(fUnitRoots)
 library(forecast)
 library(tseries)
 library(TSA)
+library(FinTS)
 #portfolio = c("BTC-USD","ETH-USD","LTC-USD","XRP-USD","ADA-USD")
 portfolio = c("BTC-USD")
 getSymbols(portfolio, src="yahoo", from="2000-01-01")
@@ -132,7 +133,7 @@ plot.decomposed.xts <-
   }
 
 
-########## MOTHLY MODELING ##########
+########## MOTHLY MODELING (ARIMA)##########
 
 log_btc_monthly <-log(Cl(btc_monthly))
 plot(log_btc_monthly)
@@ -180,7 +181,9 @@ pv # 0.4895
 
 
 # try ARMA(13,13) and fix other coef to zero: - NOT siginificant
-est = arima(diff1_log_btc_monthly,order=c(13,0,13),fixed=c(rep(0,12),NA,rep(0,12),NA,NA),seasonal=list(order=c(0,0,0),period=12))
+est = arima(diff1_log_btc_monthly,order=c(13,0,13),
+            fixed=c(rep(0,12),NA,rep(0,12),NA,NA),
+            seasonal=list(order=c(0,0,0),period=12))
 est
 
 jointTest= Box.test(est$residuals, lag=24, type="Ljung")
@@ -190,36 +193,62 @@ pv=1-pchisq(jointTest$statistic[1],23) #Compute p-value using 8 degrees of freed
 names(pv) <- 'pv'
 pv #0.5111164
 
+
+forecast::checkresiduals(est)
+tsdiag(est)
+
+
 # conclusion: try MA(13) if insist on using ARMA as the mean model
 
 # # seasonal difference on price - seems incorrect
 # sdiff1_log_btc_monthly <- diff(log_btc_monthly, differences=12) 
 # sdiff1_log_btc_monthly <- na.omit(sdiff1_log_btc_monthly)
-# plot(sdiff1_log_btc_monthly, col = "red", main="seasonal differentiation on log btc price monthly")
+# plot(sdiff1_log_btc_monthly, col = "red",main="seasonal differentiation on log btc price monthly")
 # 
 # adf.test(sdiff1_log_btc_monthly) # test non-stationary, p < 0.05, stationary
 # Box.test(sdiff1_log_btc_monthly, lag=48, type="Ljung") # test white noise, p < 0.05 not white noise
 # acf(ts(sdiff1_log_btc_monthly), main='Seasonal Diff on Monthly Log Price', lag=60)
 # pacf(ts(sdiff1_log_btc_monthly),main='Seasonal Diff on Monthly Log Price', lag=60)
 
-resm <- ar(diff1_log_btc_monthly, method="ols"); resm
-plot(as.numeric(names(resm$aic)), resm$aic, type="h",
-     xlab="k", ylab="AIC")
+########## MOTHLY MODELING (GARCH) ##########
 
-monthly_AR_model = arima(log_btc_monthly,order=c(1,1,0),seasonal=list(order=c(0,1,0),period=12))
-monthly_AR_model
+#garch - N
+log_btc_monthly <-log(Cl(btc_monthly))
+diff1_log_btc_monthly <- diff(log_btc_monthly, differences=1)
+diff1_log_btc_monthly = diff1_log_btc_monthly[2:99]
+library(fGarch)
+mod1 <- garchFit(diff1_log_btc_monthly~1+garch(1,1), data=diff1_log_btc_monthly)
+summary(mod1)
 
-jointTest= Box.test(monthly_AR_model$residuals, lag=12, type="Ljung")
-jointTest
+vola <- volatility(mod1)
+plot(ts(vola, start=start(diff1_log_btc_monthly), frequency=frequency(diff1_log_btc_monthly)), 
+     xlab="year", ylab="volatility")
+abline(h=sd(diff1_log_btc_monthly), col="green")
+plot(mod1, which=3)
+#garch - t
+mod2 <- garchFit(~ 1 + garch(1,1), data=diff1_log_btc_monthly, 
+                 cond.dist="std", trace=FALSE)
+summary(mod2)
+plot(mod2, which=13)
+mod3 <- garchFit(~ 1 + garch(1,1), data=diff1_log_btc_monthly, 
+                 cond.dist="sstd", trace=FALSE)
+summary(mod3)
 
-pv=1-pchisq(jointTest$statistic[1],11) #Compute p-value using 8 degrees of freedom
-names(pv) <- 'pv'
-pv
+x.btc <- as.vector(time(diff1_log_btc_monthly))
+vola1 <- volatility(mod1)
+vola2 <- volatility(mod2)
+vola3 <- volatility(mod3)
+matplot(x.btc, cbind(vola1, vola2, vola3),
+        type="l",
+        lty=1, col=c("green", "blue", "red"), 
+        xlab="year", ylab="volatility")
+legend('top', lty=1, col=c("green", "blue", "red"), 
+       legend=c("Normal", "Student-t", "skewed t"))
 
-forecast::checkresiduals(monthly_AR_model)
-tsdiag(monthly_AR_model)
 
-# predict
+
+########## MODEL PREDICT ##########
+
 monthly_AR_model <- arima(log_btc_monthly[1:95],order=c(1,1,0),seasonal=list(order=c(0,1,0),period=12))
 monthly_AR_pred <- predict(monthly_AR_model, n.ahead=4)
 result = cbind(Observed=round(c(log_btc_monthly[96:99]), 4), 
@@ -232,6 +261,7 @@ lines(result[,2] - 2*result[,3],
       lwd=1, lty=3, type="l")
 lines(result[,2] + 2*result[,3], 
       col="green", lwd=1, lty=3, type="l")
+
 
 
 
@@ -259,7 +289,71 @@ pacf(ts(diff1_log_btc_weekly),ylim=c(-0.2,1))
 
 unitrootTest(diff1_log_btc_weekly,lags=1,type=c("c"))
 
-# conclusion: weekly data is white noise
+
+#garch - N
+log_btc_weekly <-log(Cl(btc_weekly))
+diff1_log_btc_weekly <- diff(log_btc_weekly, differences=1)
+diff1_log_btc_weekly = diff1_log_btc_weekly[2:428]
+library(fGarch)
+mod1 <- garchFit(diff1_log_btc_weekly~1+garch(1,1), data=diff1_log_btc_weekly)
+summary(mod1)
+
+vola <- volatility(mod1)
+plot(ts(vola, start=start(diff1_log_btc_weekly), frequency=frequency(diff1_log_btc_weekly)), 
+     xlab="year", ylab="volatility")
+abline(h=sd(diff1_log_btc_weekly), col="green")
+plot(mod1, which=3)
+#garch - t
+mod2 <- garchFit(~ 1 + garch(1,1), data=diff1_log_btc_weekly, 
+                 cond.dist="std", trace=FALSE)
+summary(mod2)
+plot(mod2, which=13)
+mod3 <- garchFit(~ 1 + garch(1,1), data=diff1_log_btc_weekly, 
+                 cond.dist="sstd", trace=FALSE)
+summary(mod3)
+plot(mod3, which=13)
+x.btc <- as.vector(time(diff1_log_btc_weekly))
+vola1 <- volatility(mod1)
+vola2 <- volatility(mod2)
+vola3 <- volatility(mod3)
+matplot(x.btc, cbind(vola1, vola2, vola3),
+        type="l",
+        lty=1, col=c("green", "blue", "red"), 
+        xlab="year", ylab="volatility")
+legend("top", lty=1, col=c("green", "blue", "red"), 
+       legend=c("Normal", "Student-t", "skewed t"))
+
+# predict
+library(tibble)
+p1 <- predict(mod1, n.ahead=12)[["standardDeviation"]]
+p2 <- predict(mod2, n.ahead=12)[["standardDeviation"]]
+p3 <- predict(mod3, n.ahead=12)[["standardDeviation"]]
+pred.tab <- tibble(
+  "n-head"=1:12,
+  "normal"=p1,
+  "student-t"=p2,
+  "skewed t"=p3
+)
+knitr::kable(pred.tab, digits=4)
+
+plot(sigma(mod3), 
+     format.labels="%Y",
+     main="GARCH-PREDICT", 
+     major.ticks="years", minor.ticks=NULL, 
+     grid.ticks.on="years")
+
+
+#library(rugarch)
+#spec1 <- ugarchspec(
+#  mean.model = list(
+#    armaOrder=c(0,0),
+#    include.mean=TRUE  ),
+#  variance.model = list(
+#    model = "iGARCH", # standard GARCH model
+#    garchOrder = c(1,1) ),
+#  distribution.model="sstd" ) 
+#mod2ru <- ugarchfit(spec = spec1, data = diff1_log_btc_weekly)
+#show(mod2ru)
 
 ########## DAILY MODELING ##########
 
