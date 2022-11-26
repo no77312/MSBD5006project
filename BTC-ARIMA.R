@@ -167,8 +167,8 @@ plot(diff1_log_btc_monthly, col = "red")
 adf.test(diff1_log_btc_monthly)
 
 Box.test(diff1_log_btc_monthly, lag=48, type="Ljung")
-acf(diff1_log_btc_monthly, lag=60)
-pacf(diff1_log_btc_monthly, lag=60)
+acf(ts(diff1_log_btc_monthly), lag=60,ylim=c(-0.2,1))
+pacf(ts(diff1_log_btc_monthly), lag=60,ylim=c(-0.2,1))
 
 unitrootTest(diff1_log_btc_monthly,lags=1,type=c("c"))
 
@@ -219,8 +219,8 @@ plot(diff1_log_btc_weekly, col = "red")
 adf.test(diff1_log_btc_weekly)
 
 Box.test(diff1_log_btc_weekly, lag=14, type="Ljung")
-acf(diff1_log_btc_weekly)
-pacf(diff1_log_btc_weekly)
+acf(ts(diff1_log_btc_weekly),ylim=c(-0.2,1))
+pacf(ts(diff1_log_btc_weekly),ylim=c(-0.2,1))
 
 unitrootTest(diff1_log_btc_weekly,lags=1,type=c("c"))
 
@@ -245,8 +245,8 @@ plot(diff1_log_btc_daily, col = "red")
 adf.test(diff1_log_btc_daily)
 
 Box.test(diff1_log_btc_daily, lag=40, type="Ljung")
-acf(diff1_log_btc_daily)
-pacf(diff1_log_btc_daily)
+acf(ts(diff1_log_btc_daily),ylim=c(-0.2,1))
+pacf(ts(diff1_log_btc_daily),ylim=c(-0.2,1))
 
 unitrootTest(diff1_log_btc_daily,lags=1,type=c("c"))
 
@@ -254,8 +254,8 @@ unitrootTest(diff1_log_btc_daily,lags=1,type=c("c"))
 # AR
 # auto.arima(log_btc_daily)
 
-acf(diff1_log_btc_daily,lag=60)
-pacf(diff1_log_btc_daily,lag=60)
+acf(ts(diff1_log_btc_daily),lag=60,ylim=c(-0.2,1))
+pacf(ts(diff1_log_btc_daily),lag=60,ylim=c(-0.2,1))
 
 resm <- ar(diff1_log_btc_daily, method="ols"); resm
 plot(as.numeric(names(resm$aic)), resm$aic, type="h",
