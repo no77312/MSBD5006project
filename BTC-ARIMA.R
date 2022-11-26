@@ -71,11 +71,11 @@ fBasics::normalTest(x, method="jb")
 periodicity(`BTC-USD`)
 
 btc_daily <- to.period(`BTC-USD`, "days")
-attr(btc_daily, 'frequency') <- 1
+attr(btc_daily, 'frequency') <- 7
 periodicity(btc_daily)
 
 btc_weekly <- to.period(`BTC-USD`, "weeks")
-attr(btc_weekly, 'frequency') <- 7
+attr(btc_weekly, 'frequency') <- 365.25/7
 periodicity(btc_weekly)
 
 btc_monthly <- to.period(`BTC-USD`, "months")
@@ -134,25 +134,10 @@ plot.decomposed.xts <-
 
 ########## MOTHLY MODELING ##########
 
-
-# btc_ts = ts(log(`BTC-USD`[, 4]), frequency = 12)
-# plot(btc_ts)
-# adf.test(btc_ts)
-# btc_tscomponents <- decompose(btc_ts)
-# plot(btc_tscomponents, col = "red")
-# 
-# btc_tsdiff1 <- diff(btc_ts, differences=1)
-# plot.ts(btc_tsdiff1, col = "red")
-# adf.test(btc_tsdiff1)
-# 
-# Box.test(btc_tsdiff1, lag=12, type="Ljung")
-# acf(btc_tsdiff1, lag=36)
-# pacf(btc_tsdiff1, lag=36)   
-# unitrootTest(btc_tsdiff1,lags=1,type=c("c"))
-
 log_btc_monthly <-log(Cl(btc_monthly))
 plot(log_btc_monthly)
-adf.test(log_btc_monthly)
+adf.test(log_btc_monthly) # test stationary
+Box.test(diff1_log_btc_monthly, lag=48, type="Ljung") # test white noise
 
 btc_tscomponents <- decompose(as.ts(log_btc_monthly))
 plot(btc_tscomponents, col = "red")
@@ -160,27 +145,42 @@ plot(btc_tscomponents, col = "red")
 dex <- decompose.xts(log_btc_monthly)
 plot(dex)
 
+# ordinary difference on price i.e. log return
 diff1_log_btc_monthly <- diff(log_btc_monthly, differences=1) # same as btc_logrtn_monthly
 diff1_log_btc_monthly <- na.omit(diff1_log_btc_monthly)
-plot(diff1_log_btc_monthly, col = "red")
+plot(diff1_log_btc_monthly, col = "red", main="ordinary differentiation on log btc price monthly")
 
-adf.test(diff1_log_btc_monthly)
+adf.test(diff1_log_btc_monthly) # test non-stationary, p-value < 0.05, is stationary
+Box.test(diff1_log_btc_monthly, lag=48, type="Ljung") # test white noise, p-value > 0.05, is white noise
+acf(ts(diff1_log_btc_monthly), main='Ordinary Diff on Monthly Log Return', lag=60) # a significant lag at 12 & 23
+pacf(ts(diff1_log_btc_monthly),main='Ordinary Diff on Monthly Log Return', lag=60) # a significant lag at 13 & 23
 
-Box.test(diff1_log_btc_monthly, lag=48, type="Ljung")
-acf(ts(diff1_log_btc_monthly), lag=60,ylim=c(-0.2,1))
-pacf(ts(diff1_log_btc_monthly), lag=60,ylim=c(-0.2,1))
+# conclusion: monthly return is white noise
 
-unitrootTest(diff1_log_btc_monthly,lags=1,type=c("c"))
+# # seasonal difference on price - seems incorrect
+# sdiff1_log_btc_monthly <- diff(log_btc_monthly, differences=12) 
+# sdiff1_log_btc_monthly <- na.omit(sdiff1_log_btc_monthly)
+# plot(sdiff1_log_btc_monthly, col = "red", main="seasonal differentiation on log btc price monthly")
+# 
+# adf.test(sdiff1_log_btc_monthly) # test non-stationary, p < 0.05, stationary
+# Box.test(sdiff1_log_btc_monthly, lag=48, type="Ljung") # test white noise, p < 0.05 not white noise
+# acf(ts(sdiff1_log_btc_monthly), main='Seasonal Diff on Monthly Log Price', lag=60)
+# pacf(ts(sdiff1_log_btc_monthly),main='Seasonal Diff on Monthly Log Price', lag=60)
 
 resm <- ar(diff1_log_btc_monthly, method="ols"); resm
 plot(as.numeric(names(resm$aic)), resm$aic, type="h",
      xlab="k", ylab="AIC")
 
-
-
 monthly_AR_model = arima(log_btc_monthly,order=c(1,1,0),seasonal=list(order=c(0,1,0),period=12))
+monthly_AR_model
 
-Box.test(monthly_AR_model$residuals, lag=12, type="Ljung")
+jointTest= Box.test(monthly_AR_model$residuals, lag=12, type="Ljung")
+jointTest
+
+pv=1-pchisq(jointTest$statistic[1],11) #Compute p-value using 8 degrees of freedom
+names(pv) <- 'pv'
+pv
+
 forecast::checkresiduals(monthly_AR_model)
 tsdiag(monthly_AR_model)
 
