@@ -180,7 +180,7 @@ names(pv) <- 'pv'
 pv # 0.4895
 
 
-# try ARMA(13,13) and fix other coef to zero: - NOT siginificant
+# try ARMA(13,13) and fix other coef to zero: - NOT significant
 est = arima(diff1_log_btc_monthly,order=c(13,0,13),
             fixed=c(rep(0,12),NA,rep(0,12),NA,NA),
             seasonal=list(order=c(0,0,0),period=12))
@@ -197,8 +197,10 @@ pv #0.5111164
 forecast::checkresiduals(est)
 tsdiag(est)
 
+arima_model <- auto.arima(diff1_log_btc_monthly)
+summary(arima_model)
 
-# conclusion: try MA(13) if insist on using ARMA as the mean model
+# conclusion: best model is the mean model.try MA(13) if insist on using ARMA as the mean model
 
 # # seasonal difference on price - seems incorrect
 # sdiff1_log_btc_monthly <- diff(log_btc_monthly, differences=12) 
@@ -220,7 +222,7 @@ library(fGarch)
 mod1 <- garchFit(diff1_log_btc_monthly~1+garch(1,1), data=diff1_log_btc_monthly)
 summary(mod1)
 
-vola <- volatility(mod1)
+vola <- fGarch::volatility(mod1)
 plot(ts(vola, start=start(diff1_log_btc_monthly), frequency=frequency(diff1_log_btc_monthly)), 
      xlab="year", ylab="volatility")
 abline(h=sd(diff1_log_btc_monthly), col="green")
@@ -235,9 +237,9 @@ mod3 <- garchFit(~ 1 + garch(1,1), data=diff1_log_btc_monthly,
 summary(mod3)
 
 x.btc <- as.vector(time(diff1_log_btc_monthly))
-vola1 <- volatility(mod1)
-vola2 <- volatility(mod2)
-vola3 <- volatility(mod3)
+vola1 <- fGarch::volatility(mod1)
+vola2 <- fGarch::volatility(mod2)
+vola3 <- fGarch::volatility(mod3)
 matplot(x.btc, cbind(vola1, vola2, vola3),
         type="l",
         lty=1, col=c("green", "blue", "red"), 
@@ -298,7 +300,7 @@ library(fGarch)
 mod1 <- garchFit(diff1_log_btc_weekly~1+garch(1,1), data=diff1_log_btc_weekly)
 summary(mod1)
 
-vola <- volatility(mod1)
+vola <- fGarch::volatility(mod1)
 plot(ts(vola, start=start(diff1_log_btc_weekly), frequency=frequency(diff1_log_btc_weekly)), 
      xlab="year", ylab="volatility")
 abline(h=sd(diff1_log_btc_weekly), col="green")
@@ -313,9 +315,9 @@ mod3 <- garchFit(~ 1 + garch(1,1), data=diff1_log_btc_weekly,
 summary(mod3)
 plot(mod3, which=13)
 x.btc <- as.vector(time(diff1_log_btc_weekly))
-vola1 <- volatility(mod1)
-vola2 <- volatility(mod2)
-vola3 <- volatility(mod3)
+vola1 <- fGarch::volatility(mod1)
+vola2 <- fGarch::volatility(mod2)
+vola3 <- fGarch::volatility(mod3)
 matplot(x.btc, cbind(vola1, vola2, vola3),
         type="l",
         lty=1, col=c("green", "blue", "red"), 
