@@ -584,10 +584,113 @@ res_mW3=residuals(mW3,standardize=T)
 Box.test(res_mW3,10,type="Ljung")
 Box.test(res_mW3^2,10,type="Ljung")
 ```
+
 ```{r}
 #plot(mW3@fit$var)
 #plot(sigma(mW3))
 ```
+
+Forecast with gjRGARCH(1,1) on weekly log return
+
+5-step ahead prediction
+```{r}
+# estimate model excluding the out-of-sample
+
+T <- nrow(diff1_log_btc_weekly)
+
+out_of_sample <- round(T*.2)
+dates_out_of_sample <- tail(index(diff1_log_btc_weekly), out_of_sample)
+garch_spec <- ugarchspec(mean.model = list(armaOrder = c(0,0), include.mean = TRUE), 
+                         variance.model = list(model = "gjrGARCH", garchOrder = c(1,1)))
+garch_fit <- ugarchfit(spec = garch_spec, data = diff1_log_btc_weekly, out.sample = out_of_sample)
+coef(garch_fit)
+
+# forecast log-returns along the whole out-of-sample
+garch_fore <- ugarchforecast(garch_fit, n.ahead = h, n.roll = out_of_sample-1)
+forecast_log_returns <- xts(garch_fore@forecast$seriesFor[1, ], dates_out_of_sample)
+forecast_volatility <- xts(garch_fore@forecast$sigmaFor[1, ], dates_out_of_sample)
+
+# plot of log-returns
+plot(cbind("fitted"   = fitted(garch_fit),
+           "forecast" = forecast_log_returns,
+           "original" = diff1_log_btc_weekly), 
+     col = c("blue", "red", "black"), lwd = c(0.5, 0.5, 2),
+     main = "Forecast of weekly BTC log-returns", legend.loc = "topleft")
+
+# plot of volatility log-returns
+plot(cbind("fitted volatility"   = sigma(garch_fit),
+           "forecast volatility" = forecast_volatility,
+           "log-returns"         = diff1_log_btc_weekly), 
+     col = c("blue", "red", "black"), lwd = c(2, 2, 1),
+     main = "Forecast of volatility of weekly BTC log-returns", legend.loc = "topleft")
+
+```
+
+
+rolling window comparison
+
+```{r}
+# model specification of an eGARCH(1,1)
+spec <- garch_spec
+
+# static fit and forecast
+static_fit <- ugarchfit(spec = spec, data = diff1_log_btc_weekly, out.sample = out_of_sample)
+static_fore_logreturns <- xts(ugarchforecast(garch_fit, n.ahead = h, n.roll = out_of_sample-1)@forecast$seriesFor[1, ],
+                                 dates_out_of_sample)
+
+# rolling fit and forecast
+modelroll <- ugarchroll(spec = spec, data = diff1_log_btc_weekly, n.ahead = 1, 
+                        forecast.length = out_of_sample, refit.every = 5, refit.window = "moving")
+rolling_fore_logreturns <- xts(modelroll@forecast$density$Mu, dates_out_of_sample)
+
+report(modelroll, type="VaR", VaR.alpha = 0.01, conf.level = 0.95)
+report(modelroll, type="fpm")
+
+# plot of forecast
+plot(cbind("static forecast"  = static_fore_logreturns,
+           "rolling forecast" = rolling_fore_logreturns),
+     col = c("black", "red"), lwd = 2,
+     main = "Forecast with gjrGARCH(1,1) model on Weekly Return", legend.loc = "topleft")
+
+# plot of forecast error
+error_logreturns <- cbind(diff1_log_btc_weekly - static_fore_logreturns,
+                          diff1_log_btc_weekly - rolling_fore_logreturns)
+names(error_logreturns) <- c("rolling forecast", "static forecast")
+plot(error_logreturns, col = c("black", "red"), lwd = 2,
+     main = "Forecast error with gjrGARCH(1,1) model on Weekly Return", legend.loc = "topleft")
+```
+
+log return to price
+
+```{r}
+# simulate one path
+garch_spec <- ugarchspec(mean.model = list(armaOrder = c(0,0), include.mean = TRUE), 
+                         variance.model = list(model = "gjrGARCH", garchOrder = c(1,1)),
+                         fixed.pars = as.list(coef(garch_fit))
+                                               )
+
+T <- 36
+path_garch <- ugarchpath(garch_spec, m.sim = 3, n.sim = T, rseed=1)
+
+str(path_garch@path$seriesSim)
+plot.zoo(fitted(path_garch))
+plot.zoo(sigma(path_garch))
+
+fOrigin <- tail(index(train_weeklyR), 1)
+fOriginPrice <- as.numeric(btc_weekly[fOrigin]$`BTC-USD.Close`)
+
+p<-fOriginPrice*apply(fitted(path_garch),2,'cumsum') + fOriginPrice
+matplot(p, type='l', lwd=3, main = "BTC Weekly Closing Price from gjrGARCH model")
+
+d <- seq(as.Date(fOrigin),by='weeks',length=T)
+p.xts <- xts(p, order.by=d)
+plot(cbind("forecast"=p.xts,
+           "actual"=window(btc_weekly,start=fOrigin)$`BTC-USD.Close`
+           ), 
+     lwd=3, main = "BTC Weekly Closing Price from gjrGARCH model", legend.loc = "topleft")
+```
+
+
 
 
 ### Monthly
@@ -744,7 +847,110 @@ plot(cbind("fitted volatility"   = sigma(garch_fit),
 
 ```
 
+forecast error
 
+```{r}
+error_var <- rbind(
+                   "eGARCH(1,1)" = c(var(diff1_log_btc_monthly - fitted(garch_fit)),
+                                    var(diff1_log_btc_monthly - forecast_log_returns)))
+colnames(error_var) <- c("in-sample", "out-of-sample")
+print(error_var)
+```
+show some plots of the out-of-sample error
+
+```{r}
+error_logreturns <- cbind(diff1_log_btc_monthly - forecast_log_returns)
+names(error_logreturns) <- c("eGARCH")
+plot(error_logreturns, col = c("red"), lwd = c(1),
+     main = "Out-of-sample error of static return forecast for different models", legend.loc = "bottomleft")
+```
+
+rolling window comparison
+```{r}
+# model specification of an eGARCH(1,1)
+spec <- garch_spec
+
+# static fit and forecast
+static_fit <- ugarchfit(spec = spec, data = diff1_log_btc_monthly, out.sample = out_of_sample)
+static_fore_logreturns <- xts(ugarchforecast(garch_fit, n.ahead = h, n.roll = out_of_sample-1)@forecast$seriesFor[1, ],
+                                 dates_out_of_sample)
+
+# rolling fit and forecast
+modelroll <- ugarchroll(spec = spec, data = diff1_log_btc_monthly, n.ahead = 1, 
+                        forecast.length = out_of_sample, refit.every = 5, refit.window = "moving")
+rolling_fore_logreturns <- xts(modelroll@forecast$density$Mu, dates_out_of_sample)
+
+report(modelroll, type="VaR", VaR.alpha = 0.01, conf.level = 0.95)
+report(modelroll, type="fpm")
+
+# plot of forecast
+plot(cbind("static forecast"  = static_fore_logreturns,
+           "rolling forecast" = rolling_fore_logreturns),
+     col = c("black", "red"), lwd = 2,
+     main = "Forecast with eGARCH(1,1) model on Monthly Return", legend.loc = "topleft")
+
+# plot of forecast error
+error_logreturns <- cbind(diff1_log_btc_monthly - static_fore_logreturns,
+                          diff1_log_btc_monthly - rolling_fore_logreturns)
+names(error_logreturns) <- c("rolling forecast", "static forecast")
+plot(error_logreturns, col = c("black", "red"), lwd = 2,
+     main = "Forecast error with eGARCH(1,1) model on Monthly Return", legend.loc = "topleft")
+```
+
+
+price forecast
+
+```{r}
+# simulate one path
+garch_spec <- ugarchspec(mean.model = list(armaOrder = c(0,0), include.mean = TRUE), 
+                         variance.model = list(model = "eGARCH", garchOrder = c(1,1)),
+                         fixed.pars = as.list(coef(garch_fit))
+                                               )
+
+T <- 36
+path_garch <- ugarchpath(garch_spec, m.sim = 3, n.sim = T, rseed=10)
+
+str(path_garch@path$seriesSim)
+plot.zoo(fitted(path_garch))
+plot.zoo(sigma(path_garch))
+
+fOrigin <- tail(index(train_monthlyR), 1)
+fOriginPrice <- as.numeric(btc_monthly[fOrigin]$`BTC-USD.Close`)
+
+p<-fOriginPrice*apply(fitted(path_garch),2,'cumsum') + fOriginPrice
+matplot(p, type='l', lwd=3, main = "BTC Monthly Closing Price from eGARCH model")
+
+d <- seq(as.Date(fOrigin+1),by='1 month',length=T) -1
+p.xts <- xts(p, order.by=d)
+plot(cbind("forecast"=p.xts,
+           "actual"=window(btc_monthly,start=fOrigin)$`BTC-USD.Close`
+           ), 
+     lwd=3, main = "BTC Monthly Closing Price from eGARCH model", legend.loc = "topleft")
+
+```
+
+
+
+
+## Compare with Other Methods - TBC
+
+```{r}
+
+T <- nrow(diff1_log_btc_monthly)
+T_trn <- round(0.8*T)
+T_tst <- T - T_trn
+
+train_monthlyR <- diff1_log_btc_monthly[1:T_trn,]
+test_monthlyR <- diff1_log_btc_monthly[-c(1:T_trn),]
+
+# plot
+{ plot(diff1_log_btc_monthly, main = "Monthly Returns", lwd = 1.5)
+  addEventLines(xts("training", index(diff1_log_btc_monthly[T_trn])), srt=90, pos=2, lwd = 2, col = "blue") }
+
+var_constant <- var(train_monthlyR)  # or: mean(x_trn^2)
+plot(cbind(sqrt(var_constant), train_monthlyR), col = c("red", "black"), lwd = c(2.5, 1.5),
+     main = "Constant envelope")
+```
 
 
 
