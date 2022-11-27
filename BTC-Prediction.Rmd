@@ -1,0 +1,759 @@
+---
+title: "BTC_Prediction"
+author: "Karin Chang 20750481"
+date: "2022-11-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(quantmod)
+library(xts)
+library(fUnitRoots)
+library(forecast)
+library(tseries)
+library(TSA)
+library(FinTS)
+library(fGarch)
+library(rugarch)
+```
+
+## Get Data
+
+```{r}
+
+#portfolio = c("BTC-USD","ETH-USD","LTC-USD","XRP-USD","ADA-USD")
+portfolio = c("BTC-USD")
+getSymbols(portfolio, src="yahoo", from="2000-01-01")
+tail(`BTC-USD`)
+
+chartSeries(`BTC-USD`)
+barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`ETH-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`LTC-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`XRP-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+# 
+# chartSeries(`ADA-USD`)
+# barChart(`BTC-USD`,theme='white.mono',bar.type='hlc')
+
+```
+
+## Prepare Data into different periodicity
+
+```{r}
+btc_daily <- to.period(`BTC-USD`, "days")
+attr(btc_daily, 'frequency') <- 7
+periodicity(btc_daily)
+
+btc_weekly <- to.period(`BTC-USD`, "weeks")
+attr(btc_weekly, 'frequency') <- 365.25/7
+periodicity(btc_weekly)
+
+btc_monthly <- to.period(`BTC-USD`, "months")
+attr(btc_monthly, 'frequency') <- 12
+periodicity(btc_monthly)
+
+btc_logrtn_daily <- Delt(Cl(`BTC-USD`),type='log') # same as diff(log(`BTC-USD`[, 4]))
+btc_logrtn_weekly <- Delt(Cl(btc_weekly),type='log')
+btc_logrtn_monthly <- Delt(Cl(btc_monthly),type='log')
+```
+
+
+## Data Exploration on Daily Log Return
+
+```{r}
+chartSeries(
+  btc_logrtn_daily, type="l", TA=NULL, 
+  name="Daily Log Returns",
+  theme="white", major.ticks="years", minor.ticks=FALSE)
+
+x <- coredata(btc_logrtn_daily)
+hist(x, main="Daily Log Returns", xlab="", ylab="")
+
+qqnorm(x, main="Daily Log Returns")
+qqline(x, col="red")
+
+fBasics::basicStats(x)
+
+tmp.1 <- density(x, na.rm=TRUE)
+tmp.x <- seq(min(x, na.rm=TRUE), max(x, na.rm=TRUE), 
+             length.out=100)
+tmp.y <- dnorm(tmp.x, mean(x, na.rm=TRUE), 
+               sd(x, na.rm=TRUE))
+tmp.ra <- range(c(tmp.1$y, tmp.y), na.rm=TRUE)
+plot(tmp.1, main="Daily Log Return", 
+     ylim=tmp.ra)
+lines(tmp.x, tmp.y, lwd=2, col="red")
+legend("topleft", lwd=c(1,2), 
+       col=c("black", "red"),
+       legend=c("Kernel density Est.", 
+                "Parametric normal density est."))
+
+t.test(x)
+tmp <- fBasics::basicStats(x)["Skewness", 1]; tmp
+tmp/sqrt(6/length(x))
+
+tmp <- fBasics::basicStats(x)["Kurtosis", 1]; tmp
+tmp/sqrt(24/length(x))
+
+fBasics::normalTest(x, method="jb")
+```
+
+
+## Data Exploration on Volatility of Daily Log Return
+
+```{r}
+library(PerformanceAnalytics)
+
+chart.RollingPerformance(R = btc_logrtn_daily,
+                         width = 30,
+                         FUN = "sd.annualized",
+                         scale = 365.25,
+                         main = "Bitcoin's monthly rolling volatility")
+```
+
+
+## Decompose TimeSeries
+```{r, include=FALSE}
+decompose.xts <-
+  function (x, type = c("additive", "multiplicative"), filter = NULL) 
+  {
+    dts <- decompose(as.ts(x), type, filter)
+    dts$x <- .xts(dts$x, .index(x))
+    dts$seasonal <- .xts(dts$seasonal, .index(x))
+    dts$trend <- .xts(dts$trend, .index(x))
+    dts$random <- .xts(dts$random, .index(x))
+    
+    with(dts,
+         structure(list(x = x, seasonal = seasonal, trend = trend,
+                        random = if (type == "additive") x - seasonal - trend else x/seasonal/trend, 
+                        figure = figure, type = type), class = "decomposed.xts"))
+  }
+
+plot.decomposed.xts <-
+  function(x, ...)
+  {
+    xx <- x$x
+    if (is.null(xx))
+      xx <- with(x,
+                 if (type == "additive") random + trend + seasonal
+                 else random * trend * seasonal)
+    p <- cbind(observed = xx, trend = x$trend, seasonal = x$seasonal, random = x$random)
+    plot(p, main = paste("Decomposition of", x$type, "time series"), multi.panel = 4,
+         yaxis.same = FALSE, major.ticks = "years", grid.ticks.on = "years", ...)
+  }
+```
+
+
+### Monthly Price
+
+```{r}
+#log transformation on monthly close price 
+log_btc_monthly <-log(Cl(btc_monthly))
+plot(log_btc_monthly)
+
+# test H0 non-stationary 
+adf.test(log_btc_monthly)
+
+# test H0 white noise
+Box.test(log_btc_monthly, lag=48, type="Ljung") 
+
+# decompose component on log price
+btc_tscomponents <- decompose(as.ts(log_btc_monthly))
+plot(btc_tscomponents, col = "red")
+
+dex <- decompose.xts(log_btc_monthly)
+plot(dex)
+```
+
+### Weekly Price
+```{r}
+#log transformation on monthly close price 
+log_btc_weekly <-log(Cl(btc_weekly))
+plot(log_btc_weekly)
+
+# test H0 non-stationary 
+adf.test(log_btc_weekly)
+
+# test H0 white noise
+Box.test(log_btc_weekly, lag=48, type="Ljung") 
+
+# decompose component on log price
+btc_tscomponents <- decompose(as.ts(log_btc_weekly))
+plot(btc_tscomponents, col = "red")
+
+dex <- decompose.xts(log_btc_weekly)
+plot(dex)
+```
+
+### Daily Price
+```{r}
+#log transformation on monthly close price 
+log_btc_daily <-log(Cl(btc_daily))
+plot(log_btc_daily)
+
+# test H0 non-stationary 
+adf.test(log_btc_daily)
+
+# test H0 white noise
+Box.test(log_btc_daily, lag=48, type="Ljung") 
+
+# decompose component on log price
+btc_tscomponents <- decompose(as.ts(log_btc_daily))
+plot(btc_tscomponents, col = "red")
+
+dex <- decompose.xts(log_btc_daily)
+plot(dex)
+```
+
+## Test on WhiteNoise/Stationary/ARCH effect on log return series
+
+### Daily Log Return
+```{r}
+diff1_log_btc_daily <- diff(log_btc_daily, differences=1) # same as btc_logrtn_daily
+diff1_log_btc_daily <- na.omit(diff1_log_btc_daily)
+plot(diff1_log_btc_daily, col = "red")
+#plot(btc_logrtn_daily, col = "red")
+
+# test non-stationary
+adf.test(diff1_log_btc_daily)
+
+# test white noise
+Box.test(diff1_log_btc_daily, lag=60, type="Ljung") 
+
+acf(ts(diff1_log_btc_daily), main='Daily Log Return', lag=60)
+pacf(ts(diff1_log_btc_daily),main='Daily Log Return', lag=60) 
+
+# test arch effect
+acf(ts(diff1_log_btc_daily^2),60, col="red", main='Squared Daily Log Return')
+Box.test(diff1_log_btc_daily^2,lag=60,type="Ljung")
+
+atDaily=diff1_log_btc_daily-mean(diff1_log_btc_daily)
+acf(ts(atDaily^2),60,col="red", main='Residual on Daily Log Return Mean equation')
+Box.test(atDaily^2,lag=60,type="Ljung")
+
+dex <- decompose.xts(diff1_log_btc_daily)
+plot(dex)
+
+```
+daily log return series: stationary + white noise i.e. no serial correlations
+squared series not white noise, indicating presence of ARCH effect
+
+### Weekly Log Return
+```{r}
+diff1_log_btc_weekly <- diff(log_btc_weekly, differences=1) # same as btc_logrtn_weekly
+diff1_log_btc_weekly <- na.omit(diff1_log_btc_weekly)
+plot(diff1_log_btc_weekly, col = "red")
+#plot(btc_logrtn_weekly, col = "red")
+
+# test non-stationary
+adf.test(diff1_log_btc_weekly)
+
+# test white noise
+Box.test(diff1_log_btc_weekly, lag=60, type="Ljung") 
+
+acf(ts(diff1_log_btc_weekly), main='Weekly Log Return', lag=60)
+pacf(ts(diff1_log_btc_weekly),main='Weekly Log Return', lag=60) 
+
+# test arch effect
+acf(ts(diff1_log_btc_weekly^2),60, col="red", main='Squared Weekly Log Return')
+Box.test(diff1_log_btc_weekly^2,lag=60,type="Ljung")
+
+atWeekly=diff1_log_btc_weekly-mean(diff1_log_btc_weekly)
+acf(ts(atWeekly^2),60,col="red", main='Residual on Weekly Log Return Mean equation')
+Box.test(atWeekly^2,lag=60,type="Ljung")
+
+dex <- decompose.xts(diff1_log_btc_weekly)
+plot(dex)
+```
+weekly log return series: stationary & white noise i.e. no serial correlations
+squared series not white noise, indicating presence of ARCH effect
+
+### Monthly Log Return
+```{r}
+diff1_log_btc_monthly <- diff(log_btc_monthly, differences=1) # same as btc_logrtn_monthly
+diff1_log_btc_monthly <- na.omit(diff1_log_btc_monthly)
+plot(diff1_log_btc_monthly, col = "red")
+#plot(btc_logrtn_monthly, col = "red")
+
+# test non-stationary
+adf.test(diff1_log_btc_monthly)
+
+# test white noise
+Box.test(diff1_log_btc_monthly, lag=60, type="Ljung") 
+
+acf(ts(diff1_log_btc_monthly), main='Monthly Log Return', lag=60)
+pacf(ts(diff1_log_btc_monthly),main='Monthly Log Return', lag=60) 
+
+# test arch effect
+acf(ts(diff1_log_btc_monthly^2),60, col="red", main='Squared Monthly Log Return')
+Box.test(diff1_log_btc_monthly^2,lag=60,type="Ljung")
+
+atMonthly=diff1_log_btc_monthly-mean(diff1_log_btc_monthly)
+acf(ts(atMonthly^2),60,col="red", main='Residual on Monthly Log Return Mean equation')
+Box.test(atMonthly^2,lag=60,type="Ljung")
+
+dex <- decompose.xts(diff1_log_btc_monthly)
+plot(dex)
+```
+
+monthly log return series: stationary + serial correlations. 
+squared series not white noise, indicating presence of ARCH effect
+
+
+## Modelling
+
+Train Test Split for Model Evaluation, later we will do 5-step ahead prediction
+```{r}
+h=5 # The forecasting horizon.
+
+trainRow_Daily=nrow(diff1_log_btc_daily)-h
+train_dailyR <- diff1_log_btc_daily[1:trainRow_Daily,]
+test_dailyR <- diff1_log_btc_daily[-c(1:trainRow_Daily),]
+
+# tail(train_dailyR)
+# test_dailyR
+
+trainRow_Weekly=nrow(diff1_log_btc_weekly)-h
+train_weeklyR <- diff1_log_btc_weekly[1:trainRow_Weekly,]
+test_weeklyR <- diff1_log_btc_weekly[-c(1:trainRow_Weekly),]
+
+# tail(train_weeklyR)
+# test_weeklyR
+
+trainRow_Monthly=nrow(diff1_log_btc_monthly)-h
+train_monthlyR <- diff1_log_btc_monthly[1:trainRow_Monthly,]
+test_monthlyR <- diff1_log_btc_monthly[-c(1:trainRow_Monthly),]
+
+# tail(train_monthlyR)
+# test_monthlyR
+
+```
+
+### Daily
+
+look for mean model if applicable
+```{r}
+mm_daily <- auto.arima(log_btc_daily)
+mm_daily
+```
+
+coefficient insignificant, no mean model, look for volatility model
+
+
+trying diff distribution model of residual with SGARCH, nig followed by std
+yet none of them are adequate for daily return
+```{r}
+spec1=ugarchspec(variance.model=list(model="sGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE),
+                 distribution.model='norm')
+
+mD1=ugarchfit(spec=spec1,data=train_dailyR)
+show(mD1)
+plot(mD1, which=9)
+
+res_mD1=residuals(mD1)
+Box.test(res_mD1,10,type="Ljung")
+Box.test(res_mD1^2,10,type="Ljung")
+
+spec2=ugarchspec(variance.model=list(model="sGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE),
+                 distribution.model='std')
+
+mD2=ugarchfit(spec=spec2,data=train_dailyR)
+mD2
+plot(mD2, which=9)
+
+res_mD2=residuals(mD2)
+Box.test(res_mD2,10,type="Ljung")
+Box.test(res_mD2^2,10,type="Ljung")
+
+spec3=ugarchspec(variance.model=list(model="sGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE),
+                 distribution.model='ged'
+                 )
+
+mD3=ugarchfit(spec=spec3,data=train_dailyR)
+mD3
+plot(mD3, which=9)
+
+res_mD3=residuals(mD3)
+Box.test(res_mD3,10,type="Ljung")
+Box.test(res_mD3^2,10,type="Ljung")
+
+spec4=ugarchspec(variance.model=list(model="sGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE),
+                 distribution.model='nig'
+                 )
+
+mD4=ugarchfit(spec=spec4,data=train_dailyR)
+mD4
+plot(mD4, which=9)
+
+res_mD4=residuals(mD4)
+Box.test(res_mD4,10,type="Ljung")
+Box.test(res_mD4^2,10,type="Ljung")
+```
+
+
+
+```{r}
+mod1 <- garchFit(train_dailyR~1+garch(1,1), data=train_dailyR)
+summary(mod1)
+
+vola <- fGarch::volatility(mod1)
+plot(ts(vola, start=start(train_dailyR), frequency=frequency(train_dailyR)), 
+     xlab="year", ylab="volatility")
+abline(h=sd(train_dailyR), col="green")
+plot(mod1, which=3)
+
+#garch - t
+mod2 <- garchFit(~ 1 + garch(1,1), data=train_dailyR, 
+                 cond.dist="std", trace=FALSE)
+summary(mod2)
+plot(mod2, which=13)
+
+
+mod3 <- garchFit(~ 1 + garch(1,1), data=train_dailyR, 
+                 cond.dist="sstd", trace=FALSE)
+summary(mod3)
+
+x.btc <- as.vector(time(train_dailyR))
+vola1 <- fGarch::volatility(mod1)
+vola2 <- fGarch::volatility(mod2)
+vola3 <- fGarch::volatility(mod3)
+matplot(x.btc, cbind(vola1, vola2, vola3),
+        type="l",
+        lty=1, col=c("green", "blue", "red"), 
+        xlab="year", ylab="volatility")
+legend('top', lty=1, col=c("green", "blue", "red"), 
+       legend=c("Normal", "Student-t", "skewed t"))
+```
+
+```{r}
+library(tibble)
+p1 <- predict(mod1, n.ahead=h)[["standardDeviation"]]
+p2 <- predict(mod2, n.ahead=h)[["standardDeviation"]]
+p3 <- predict(mod3, n.ahead=h)[["standardDeviation"]]
+pred.tab <- tibble(
+  "n-head"=1:h,
+  "normal"=p1,
+  "student-t"=p2,
+  "skewed t"=p3
+)
+knitr::kable(pred.tab, digits=4)
+```
+
+Tried eGARCH / iGARCH / gjrGARCH - all not adequate on daily return neither...
+
+```{r}
+spec1=ugarchspec(variance.model=list(model="eGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mD1=ugarchfit(spec=spec1,data=train_dailyR)
+show(mD1)
+plot(mD1, which='all')
+
+res_mD1=residuals(mD1,standardize=T)
+Box.test(res_mD1,10,type="Ljung")
+Box.test(res_mD1^2,10,type="Ljung")
+
+spec2=ugarchspec(variance.model=list(model="iGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mD2=ugarchfit(spec=spec2,data=train_dailyR)
+mD2
+plot(mD2, which='all')
+
+res_mD2=residuals(mD2,standardize=T)
+Box.test(res_mD2,10,type="Ljung")
+Box.test(res_mD2^2,10,type="Ljung")
+
+spec3=ugarchspec(variance.model=list(model="gjrGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mD3=ugarchfit(spec=spec3,data=train_dailyR)
+mD3
+plot(mD3, which='all')
+
+res_mD3=residuals(mD3,standardize=T)
+Box.test(res_mD3,10,type="Ljung")
+Box.test(res_mD3^2,10,type="Ljung")
+
+```
+
+### Weekly
+
+look for mean model if applicable
+```{r}
+mm_weekly <- auto.arima(log_btc_weekly)
+mm_weekly
+```
+
+coefficient insignificant, look for volatility model
+```{r}
+
+mod1 <- garchFit(~ 1 + garch(1,1), data=train_weeklyR)
+summary(mod1)
+
+vola <- fGarch::volatility(mod1)
+plot(ts(vola, start=start(train_weeklyR), frequency=frequency(train_weeklyR)), 
+     xlab="year", ylab="volatility")
+abline(h=sd(train_weeklyR), col="green")
+plot(mod1, which=3)
+
+#garch - t
+mod2 <- garchFit(~ 1 + garch(1,1), data=train_weeklyR, 
+                 cond.dist="std", trace=FALSE)
+summary(mod2)
+plot(mod2, which=13)
+
+mod3 <- garchFit(~ 1 + garch(1,1), data=train_weeklyR, 
+                 cond.dist="sstd", trace=FALSE)
+summary(mod3)
+plot(mod3, which=13)
+
+x.btc <- as.vector(time(train_weeklyR))
+vola1 <- fGarch::volatility(mod1)
+vola2 <- fGarch::volatility(mod2)
+vola3 <- fGarch::volatility(mod3)
+matplot(x.btc, cbind(vola1, vola2, vola3),
+        type="l",
+        lty=1, col=c("green", "blue", "red"), 
+        xlab="year", ylab="volatility")
+legend("top", lty=1, col=c("green", "blue", "red"), 
+       legend=c("Normal", "Student-t", "skewed t"))
+
+```
+
+```{r}
+spec0=ugarchspec(variance.model=list(model="sGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE),
+                 distribution.model = 'norm')
+
+mW0=ugarchfit(spec=spec0,data=train_weeklyR)
+show(mW0)
+plot(mW0, which='all')
+
+res_mW0=residuals(mW0,standardize=T)
+Box.test(res_mW0,10,type="Ljung")
+Box.test(res_mW0^2,10,type="Ljung")
+```
+
+
+
+Tried eGARCH / iGARCH / gjrGARCH - adequate for weekly return
+gjrGARCH has the lowest AIC, then followed by sGARCH
+
+```{r}
+spec1=ugarchspec(variance.model=list(model="eGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mW1=ugarchfit(spec=spec1,data=train_weeklyR)
+show(mW1)
+plot(mW1, which='all')
+
+res_mW1=residuals(mW1,standardize=T)
+Box.test(res_mW1,10,type="Ljung")
+Box.test(res_mW1^2,10,type="Ljung")
+
+spec2=ugarchspec(variance.model=list(model="iGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mW2=ugarchfit(spec=spec2,data=train_weeklyR)
+show(mW2)
+plot(mW2, which='all')
+
+res_mW2=residuals(mW2,standardize=T)
+Box.test(res_mW2,10,type="Ljung")
+Box.test(res_mW2^2,10,type="Ljung")
+
+spec3=ugarchspec(variance.model=list(model="gjrGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mW3=ugarchfit(spec=spec3,data=train_weeklyR)
+show(mW3)
+plot(mW3, which='all')
+
+res_mW3=residuals(mW3,standardize=T)
+Box.test(res_mW3,10,type="Ljung")
+Box.test(res_mW3^2,10,type="Ljung")
+```
+```{r}
+#plot(mW3@fit$var)
+#plot(sigma(mW3))
+```
+
+
+### Monthly
+
+look for mean model, recall significant spike at lag at 13 & 23
+```{r}
+acf <-acf(ts(diff1_log_btc_monthly), main='Monthly Log Return', lag=36)
+acf
+
+pacf <- pacf(ts(diff1_log_btc_monthly),main='Monthly Log Return', lag=36)
+pacf
+
+# try MA(13) and fix other coef to zero:
+est = arima(diff1_log_btc_monthly,order=c(0,0,13),fixed=c(rep(0,12),NA,NA),seasonal=list(order=c(0,0,0),period=12))
+est
+
+jointTest= Box.test(est$residuals, lag=24, type="Ljung")
+jointTest
+
+pv=1-pchisq(jointTest$statistic[1],23) #Compute p-value using 8 degrees of freedom
+names(pv) <- 'pv'
+pv #0.5137
+
+# try AR(13) and fix other coef to zero:
+est = arima(diff1_log_btc_monthly,order=c(13,0,0),fixed=c(rep(0,12),NA,NA),seasonal=list(order=c(0,0,0),period=12))
+est
+
+jointTest= Box.test(est$residuals, lag=24, type="Ljung")
+jointTest
+
+pv=1-pchisq(jointTest$statistic[1],23) #Compute p-value using 8 degrees of freedom
+names(pv) <- 'pv'
+pv # 0.4895
+
+
+# try ARMA(13,13) and fix other coef to zero: - NOT significant
+est = arima(diff1_log_btc_monthly,order=c(13,0,13),
+            fixed=c(rep(0,12),NA,rep(0,12),NA,NA),
+            seasonal=list(order=c(0,0,0),period=12))
+est
+
+jointTest= Box.test(est$residuals, lag=24, type="Ljung")
+jointTest
+
+pv=1-pchisq(jointTest$statistic[1],23) #Compute p-value using 8 degrees of freedom
+names(pv) <- 'pv'
+pv #0.5111164
+
+# look for arima model if applicable
+mm_monthly <- auto.arima(log_btc_monthly)
+mm_monthly
+
+# conclusion: best model is the mean model.try MA(13) if insist on using ARMA as the mean model
+```
+
+volatility model for monthly return
+sGARCH - adequate
+
+```{r}
+spec0=ugarchspec(variance.model=list(model="sGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mM0=ugarchfit(spec=spec0,data=train_monthlyR)
+show(mM0)
+plot(mM0, which='all')
+
+res_mM0=residuals(mM0,standardize=T)
+Box.test(res_mM0,10,type="Ljung")
+Box.test(res_mM0^2,10,type="Ljung")
+```
+eGARCH / iGARCH / gjrGARCH - all adequate for monthly return
+compare AIC, eGARCH is the winner here. note the news impact curve is not symmetric compared with sGARCH
+
+```{r}
+spec1=ugarchspec(variance.model=list(model="eGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mM1=ugarchfit(spec=spec1,data=train_monthlyR)
+show(mM1)
+plot(mM1, which='all')
+
+res_mM1=residuals(mM1,standardize=T)
+Box.test(res_mM1,10,type="Ljung")
+Box.test(res_mM1^2,10,type="Ljung")
+
+spec2=ugarchspec(variance.model=list(model="iGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mM2=ugarchfit(spec=spec2,data=train_monthlyR)
+mM2
+plot(mM2, which='all')
+
+res_mM2=residuals(mM2,standardize=T)
+Box.test(res_mM2,10,type="Ljung")
+Box.test(res_mM2^2,10,type="Ljung")
+
+spec3=ugarchspec(variance.model=list(model="gjrGARCH",  garchOrder = c(1,1)),
+                 mean.model=list(armaOrder=c(0,0),include.mean = TRUE) )
+
+mM3=ugarchfit(spec=spec3,data=train_monthlyR)
+mM3
+plot(mM3, which='all')
+
+res_mM3=residuals(mM3,standardize=T)
+Box.test(res_mM3,10,type="Ljung")
+Box.test(res_mM3^2,10,type="Ljung")
+```
+
+Forecast with EGARCH(1,1) on monthly log return
+
+5-step ahead prediction
+```{r}
+# estimate model excluding the out-of-sample
+
+T <- nrow(diff1_log_btc_monthly)
+
+out_of_sample <- round(T*.2)
+dates_out_of_sample <- tail(index(diff1_log_btc_monthly), out_of_sample)
+garch_spec <- ugarchspec(mean.model = list(armaOrder = c(0,0), include.mean = TRUE), 
+                         variance.model = list(model = "eGARCH", garchOrder = c(1,1)))
+garch_fit <- ugarchfit(spec = garch_spec, data = diff1_log_btc_monthly, out.sample = out_of_sample)
+coef(garch_fit)
+
+# forecast log-returns along the whole out-of-sample
+garch_fore <- ugarchforecast(garch_fit, n.ahead = h, n.roll = out_of_sample-1)
+forecast_log_returns <- xts(garch_fore@forecast$seriesFor[1, ], dates_out_of_sample)
+forecast_volatility <- xts(garch_fore@forecast$sigmaFor[1, ], dates_out_of_sample)
+
+# plot of log-returns
+plot(cbind("fitted"   = fitted(garch_fit),
+           "forecast" = forecast_log_returns,
+           "original" = diff1_log_btc_monthly), 
+     col = c("blue", "red", "black"), lwd = c(0.5, 0.5, 2),
+     main = "Forecast of monthly BTC log-returns", legend.loc = "topleft")
+
+# plot of volatility log-returns
+plot(cbind("fitted volatility"   = sigma(garch_fit),
+           "forecast volatility" = forecast_volatility,
+           "log-returns"         = diff1_log_btc_monthly), 
+     col = c("blue", "red", "black"), lwd = c(2, 2, 1),
+     main = "Forecast of volatility of monthly BTC log-returns", legend.loc = "topleft")
+
+
+# trainRow_Monthly=nrow(diff1_log_btc_monthly)-h
+# train_monthlyR <- diff1_log_btc_monthly[1:trainRow_Monthly,]
+# test_monthlyR <- diff1_log_btc_monthly[-c(1:trainRow_Monthly),]
+# 
+# 
+# sfinal <- mM1
+# coef(mM1)
+# 
+# ugarchforecast(data=diff1_log_btc_monthly, fitORspec = mM1, n.ahead = h, n.roll = 1)
+
+
+```
+
+
+
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
