@@ -1,2 +1,4 @@
-# MSBD5006 PROJECT
-Cryptocurrency Data - Time Series Analysis
+# Cryptocurrency Data - Time Series Analysis
+
+HKUST MSBD 5006 Quantitative Analysis of Financial Time Series
+Team Project
